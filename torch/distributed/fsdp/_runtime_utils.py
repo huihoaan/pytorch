@@ -536,9 +536,7 @@ def _root_pre_forward(
     # Prepares the forward inputs by moving them to ``compute_device``
     # TODO: Do not use the side stream for tensor copies for now; investigate
     # the perf with/without it.
-    args_tuple, kwargs_tuple = _to_kwargs(
-        args, kwargs, state.compute_device.index, False
-    )
+    args_tuple, kwargs_tuple = _to_kwargs(args, kwargs, state.compute_device, False)
     args = args_tuple[0]
     kwargs = kwargs_tuple[0]
 
