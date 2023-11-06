@@ -14,18 +14,20 @@
 // See https://github.com/pytorch/pytorch/issues/37577 for an instance
 // of this bug in the past.
 
+#include <array>
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <functional>
 #include <cmath>
 #include <type_traits>
-#include <bitset>
 #include <climits>
 
 #include <ATen/cpu/vec/intrinsics.h>
 #include <ATen/native/Math.h>
 #include <ATen/NumericUtils.h>
 #include <c10/util/C++17.h>
+#include <c10/util/Half.h>
 #include <c10/util/BFloat16.h>
 #include <c10/util/BFloat16-math.h>
 #include <c10/util/copysign.h>
@@ -59,8 +61,7 @@
 #define int_vector __m256i
 #endif // CPU_CAPABILITY_AVX512
 
-namespace at {
-namespace vec {
+namespace at::vec {
 // See Note [CPU_CAPABILITY namespace]
 inline namespace CPU_CAPABILITY {
 // at::Half and at::BFloat16 should be treated as floating point
@@ -364,6 +365,9 @@ public:
   Vectorized<T> atan() const {
     return map(std::atan);
   }
+  Vectorized<T> atanh() const {
+    return map(std::atanh);
+  }
   Vectorized<T> atan2(const Vectorized<T> &exp) const {
     Vectorized<T> ret;
     for (const auto i : c10::irange(size())) {
@@ -462,6 +466,9 @@ public:
   }
   Vectorized<T> i0e() const {
     return map(calc_i0e);
+  }
+  Vectorized<T> digamma() const {
+    return map(calc_digamma);
   }
   Vectorized<T> igamma(const Vectorized<T> &x) const {
     Vectorized<T> ret;
@@ -957,16 +964,17 @@ inline Vectorized<dst_t> cast(const Vectorized<src_t>& src) {
   return CastImpl<dst_t, src_t>::apply(src);
 }
 
-template <typename T>
-inline Vectorized<int_same_size_t<T>> convert_to_int_of_same_size(const Vectorized<T>& src) {
+template <typename T, typename IntType = int_same_size_t<T>>
+inline Vectorized<IntType> convert_to_int_of_same_size(const Vectorized<T>& src) {
+  static_assert(sizeof(T) == sizeof(IntType));
   static constexpr int size = Vectorized<T>::size();
-  T src_arr[size];
-  src.store(static_cast<void*>(src_arr));
-  int_same_size_t<T> buffer[size];
-  for (const auto i : c10::irange(size)) {
-    buffer[i] = static_cast<int_same_size_t<T>>(src_arr[i]);
-  }
-  return Vectorized<int_same_size_t<T>>::loadu(static_cast<void*>(buffer));
+
+  std::array<T, size> src_arr;
+  src.store(static_cast<void*>(src_arr.data()));
+  std::array<IntType, size> buffer;
+  std::transform(src_arr.cbegin(), src_arr.cend(), buffer.begin(),
+                 [](const T& x) { return static_cast<IntType>(x); });
+  return Vectorized<IntType>::loadu(static_cast<const void*>(buffer.data()));
 }
 
 // Example inputs for AVX512:
@@ -1037,8 +1045,7 @@ inline void convert(const src_T *src, dst_T *dst, int64_t n) {
 #ifndef _MSC_VER
 # pragma unroll
 #endif
-  for (const auto i : c10::irange(n)) {
-    (void)i; //Suppress unused variable warning
+  for (C10_UNUSED const auto i : c10::irange(n)) {
     *dst = c10::convert<dst_T>(c10::load(src));
     src++;
     dst++;
@@ -1068,4 +1075,4 @@ inline void transpose_mxn(const T* src, int64_t ld_src, T* dst, int64_t ld_dst) 
   }
 }
 
-}}}
+}} // namespace at::vec::CPU_CAPABILITY

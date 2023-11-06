@@ -31,7 +31,7 @@ def init_lists():
     path_to_script = pathlib.Path(os.path.abspath(os.path.dirname(__file__)))
     TS_NATIVE_FUNCTIONS_PATH = path_to_script.parent.parent / "aten/src/ATen/native/ts_native_functions.yaml"
     with open(TS_NATIVE_FUNCTIONS_PATH) as f:
-        yaml_ts = yaml.load(f, yaml.Loader)
+        yaml_ts = yaml.load(f, yaml.SafeLoader)
     LAZY_OPS_LIST = set(remove_suffixes(itertools.chain(yaml_ts["full_codegen"], yaml_ts["supported"], yaml_ts["autograd"])))
     HAS_SYMINT_SUFFIX = yaml_ts["symint"]
     FALLBACK_LIST = {"clamp"}
@@ -310,6 +310,16 @@ class TestLazyDynamicOps(TestCase):
         x2_eager = x2_lazy.cpu()
         self.assertEqual(tuple(x2_eager.size()), (3, 2))
 
+    def test_adaptiveavgpool3d_dynamic(self):
+        # Test that adaptive_avg_pool3d gives correct shapes with lazy backend
+        img_cpu = torch.zeros([2, 3, 4, 5, 6], device="cpu")
+        out_cpu = torch.nn.AdaptiveAvgPool3d(2).to(device="cpu")(img_cpu)
+
+        test_device = get_test_device()
+        img_lazy = torch.zeros([2, 3, 4, 5, 6], device=test_device)
+        out_lazy = torch.nn.AdaptiveAvgPool3d(2).to(test_device)(img_lazy)
+
+        self.assertEqual(out_cpu.shape, out_lazy.shape)
 
 if __name__ == '__main__':
     run_tests()
