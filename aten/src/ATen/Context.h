@@ -50,7 +50,7 @@ class TORCH_API Context {
     } else if (device_type == at::kIPU) {
       return at::detail::getIPUHooks().getDefaultIPUGenerator(device.index());
     } else if (device_type == at::kPrivateUse1) {
-      return at::GetPrivateUse1HooksInterface()->getDefaultGenerator(
+      return at::detail::getPrivateUse1Hooks().getDefaultPrivateUse1Generator(
           device.index());
     } else {
       AT_ERROR(c10::DeviceTypeName(device_type), " device type not enabled.");
@@ -64,7 +64,7 @@ class TORCH_API Context {
     } else if (device_type == at::kCUDA) {
       return at::detail::getCUDAHooks().getDeviceFromPtr(data);
     } else if (device_type == at::kPrivateUse1) {
-      return at::GetPrivateUse1HooksInterface()->getDeviceFromPtr(data);
+      return at::detail::getPrivateUse1Hooks().getDeviceFromPtr(data);
     } else {
       AT_ERROR(c10::DeviceTypeName(device_type), " device type not enabled.");
     }
@@ -121,6 +121,9 @@ class TORCH_API Context {
   static bool hasORT() {
     return c10::impl::hasDeviceGuardImpl(c10::DeviceType::ORT);
   }
+  static bool hasPrivateUse1() {
+    return c10::impl::hasDeviceGuardImpl(c10::DeviceType::PrivateUse1);
+  }
   // defined in header so that getNonVariableType has ability to inline
   // call_once check. getNonVariableType is called fairly frequently
   void lazyInitCUDA() {
@@ -128,6 +131,9 @@ class TORCH_API Context {
   }
   void lazyInitHIP() {
     c10::call_once(thh_init, [&] { detail::getHIPHooks().initHIP(); });
+  }
+  void lazyInitPrivateUse1() {
+    c10::call_once(thp_init, [&] { detail::getPrivateUse1Hooks().initPrivateUse1(); });
   }
   static const at::cuda::NVRTC& getNVRTC() {
     return detail::getCUDAHooks().nvrtc();
@@ -299,6 +305,7 @@ class TORCH_API Context {
   static bool checkCuBLASConfigDeterministic();
   c10::once_flag thc_init;
   c10::once_flag thh_init;
+  c10::once_flag thp_init;
   bool enabled_cudnn = true;
   bool deterministic_cudnn = false;
   bool _deterministic_algorithms = false;

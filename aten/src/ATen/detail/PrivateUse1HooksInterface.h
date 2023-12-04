@@ -7,7 +7,8 @@ namespace at {
 
 struct TORCH_API PrivateUse1HooksInterface {
   virtual ~PrivateUse1HooksInterface() = default;
-  virtual const at::Generator& getDefaultGenerator(c10::DeviceIndex device_index) {
+  virtual void lazyInitPrivateUse1() const {}
+  virtual const at::Generator& getDefaultGenerator(c10::DeviceIndex device_index) const {
     TORCH_CHECK_NOT_IMPLEMENTED(
         false,
         "You should register `PrivateUse1HooksInterface` for PrivateUse1 before call `getDefaultGenerator`.");
@@ -22,8 +23,12 @@ struct TORCH_API PrivateUse1HooksInterface {
 
 struct TORCH_API PrivateUse1HooksArgs {};
 
-TORCH_API void RegisterPrivateUse1HooksInterface(at::PrivateUse1HooksInterface* hook_);
+C10_DECLARE_REGISTRY(PrivateUse1HooksRegistry, PrivateUse1HooksInterface, PrivateUse1HooksArgs);
+#define REGISTER_PRIVATEUSE1_HOOKS(clsname) \
+  C10_REGISTER_CLASS(PrivateUse1HooksRegistry, clsname, clsname)
 
-TORCH_API at::PrivateUse1HooksInterface* GetPrivateUse1HooksInterface();
+namespace detail {
+TORCH_API const PrivateUse1HooksInterface& getPrivateUse1Hooks();
+} // namespace detail
 
 }

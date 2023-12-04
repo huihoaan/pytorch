@@ -31,6 +31,9 @@ static uint64_t last_abs_saved_value = 0;
 
 static uint64_t storageImpl_counter = 0;
 static uint64_t last_storageImpl_saved_value = 0;
+
+static uint64_t lazy_init_counter = 0;
+static uint64_t lazy_init_saved_value = 0;
 // register guard
 namespace at {
 namespace detail {
@@ -391,6 +394,15 @@ bool custom_abs_called() {
   return called;
 }
 
+bool custom_lazy_init_called() {
+  bool called = false;
+  if (lazy_init_counter > lazy_init_saved_value) {
+    called = true;
+    lazy_init_saved_value = lazy_init_counter;
+  }
+  return called;
+}
+
 class PrivateGeneratorImpl : public at::CPUGeneratorImpl {
 public:
   // Constructors
@@ -418,37 +430,19 @@ void set_custom_device_index(c10::DeviceIndex device_index) {
   custom_device_index = device_index;
 }
 
-struct FooHooksInterface : public at::PrivateUse1HooksInterface {
-    ~FooHooksInterface() override = default;
+struct PrivateUse1Hooks : public at::PrivateUse1HooksInterface {
+    PrivateUse1Hooks(at::PrivateUse1HooksArgs) {}
+    ~PrivateUse1Hooks() override = default;
+    void lazyInitPrivateUse1() const override {
+      lazy_init_counter += 1;
+    }
     const at::Generator& getDefaultGenerator(c10::DeviceIndex device_index) override {
       static auto device_gen = make_generator_privateuse1(device_index);
       return device_gen;
     }
 };
 
-struct FooHooksArgs : public at::PrivateUse1HooksArgs {};
-
-TORCH_DECLARE_REGISTRY(PrivateUse1HooksRegistry, FooHooksInterface, FooHooksArgs);
-#define REGISTER_PRIVATEUSE1_HOOKS(clsname) \
-  C10_REGISTER_CLASS(PrivateUse1HooksRegistry, clsname, clsname)
-
-C10_DEFINE_REGISTRY(PrivateUse1HooksRegistry, FooHooksInterface, FooHooksArgs)
-
-static at::PrivateUse1HooksInterface* get_private_hooks() {
-  static at::PrivateUse1HooksInterface* privateuse1_hooks;
-  static c10::once_flag once;
-  c10::call_once(once, [] {
-    privateuse1_hooks = PrivateUse1HooksRegistry()->Create("PrivateUse1Hooks", {}).release();
-    if (!privateuse1_hooks) {
-      privateuse1_hooks = new FooHooksInterface();
-    }
-  });
-  return privateuse1_hooks;
-}
-
-void register_hook() {
-  at::RegisterPrivateUse1HooksInterface(get_private_hooks());
-}
+REGISTER_PRIVATEUSE1_HOOKS(PrivateUse1Hooks)
 
 const at::Generator& default_generator(c10::DeviceIndex device_index) {
   return at::globalContext().defaultGenerator(at::Device(c10::DeviceType::PrivateUse1, device_index));;
@@ -492,6 +486,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("custom_device", &get_custom_device, "get custom device object");
     m.def("custom_add_called", &custom_add_called, "check if our custom add function was called");
     m.def("custom_abs_called", &custom_abs_called, "check if our custom abs function was called");
+    m.def("custom_lazy_init_called", &custom_lazy_init_called, "check if our custom lazy init function was called");
     m.def("register_generator_first", &register_generator_first, "register generator for custom device firstly");
     m.def("register_generator_second", &register_generator_second, "register generator for custom device secondly");
     m.def("set_custom_device_index", &set_custom_device_index, "set custom device index");
@@ -500,7 +495,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("custom_set_backend_meta", &custom_set_backend_meta, "a fake set tensor BackendMeta function");
     m.def("check_backend_meta", &check_backend_meta, "check if BackendMeta serialization correctly");
     m.def("custom_serialization_registry", &custom_serialization_registry, "register custom serialization function");
-    m.def("register_hook", &register_hook, "register_hook for privateuse1");
     m.def("default_generator", &default_generator, "default_generator for privateuse1");
 
     // Co-opting this file to more easily test torch.compile'ing of custom autograd functions in C++
